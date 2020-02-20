@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+
+	<title>The Tail at Scale - Understanding and implementing techniques that tolerate latency</title>
+
+	<meta name="description" content="Synopsis and implementation of techniques described at the paper Tail at scale">
+	<meta name="author" content="Ricardo Linck">
+
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+	<link rel="stylesheet" href="css/reset.css">
+	<link rel="stylesheet" href="css/reveal.css">
+	<link rel="stylesheet" href="css/theme/simple.css" id="theme">
+
+	<!-- Theme used for syntax highlighting of code -->
+	<link rel="stylesheet" href="lib/css/monokai.css">
+
+	<!-- Printing and PDF exports -->
+	<script>
+		var link = document.createElement('link');
+		link.rel = 'stylesheet';
+		link.type = 'text/css';
+		link.href = window.location.search.match(/print-pdf/gi) ? 'css/print/pdf.css' : 'css/print/paper.css';
+		document.getElementsByTagName('head')[0].appendChild(link);
+	</script>
+
+	<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+</head>
+
+<body>
+
+	<div class="reveal">
+
+		<!-- Any section element inside of this contain er is displayed as a slide -->
+		<div class="slides">
+			<section>
+				<h1>The Tail at Scale</h1>
+				<h3>Understanding techniques that tolerate latency</h3>
+			</section>
+			<section>
+				<section>
+					<h1>Distributed Systems</h1>
+				</section>
+
+				<section>
+					<h2>Why do we distribute systems again?</h2>
+					<ul>
+						<li class="fragment">Availability</li>
+						<li class="fragment">Scalability</li>
+						<li class="fragment">Partition tolerance</li>
+						<li class="fragment">Independent deployments</li>
+						<li class="fragment">Different technologies</li>
+					</ul>
+				</section>
+
+				<section>
+					<h2>What could go wrong?</h2>
+					<ul>
+						<li class="fragment">Cost</li>
+						<li class="fragment">Complexity</li>
+						<li class="fragment">Consistency</li>
+						<li class="fragment"><b>Latency</b></li>
+					</ul>
+				</section>
+
+			</section>
+			<section>
+				<section>
+					<h1>Percentiles</h1>
+				</section>
+				<section>
+					<h2>Definition</h2>
+					<q cite="https://en.wikipedia.org/wiki/Percentile">
+						A percentile (or a centile) is a measure used in statistics indicating the value below which a
+						given percentage of observations in a group of observations falls.
+					</q>
+				</section>
+				<section>
+					<h2>How to calculate that for response times?</h2>
+					<ol>
+						<li class="fragment">Order all response times for a given request.</li>
+						<li class="fragment">Take the first x% of elements.</li>
+						<li class="fragment">Get the biggest (longest) value for the set.</li>
+					</ol>
+				</section>
+				<section>
+					<h2>Example 90-th percentile (ms)</h2>
+					<ol>
+						<li class="fragment">20, 20, 20, 21, 21, 23, 23, 25, 25, 45</li>
+						<li class="fragment">20, 20, 20, 21, 21, 23, 23, 25, 25</li>
+						<li class="fragment">25</li>
+					</ol>
+				</section>
+			</section>
+			<section>
+				<section>
+					<h1>Tail latency</h1>
+				</section>
+				<section>
+					<h2>What is that?</h2>
+					<p class="fragment">Latency at the very end of the percentile spectrum.</p>
+					<p class="fragment">Your nines.</p>
+					<p class="fragment">When it comes to SLA's the tail really wags the dog!</p>
+				</section>
+
+				<section>
+					<q cite="https://www2.cs.duke.edu/courses/cps296.4/fall13/838-CloudPapers/dean_longtail.pdf">
+						... the 99th-percentile latency for all requests to
+						finish is 140ms, and the 99th-percentile
+						latency for 95% of the requests finishing is 70ms, meaning that waiting for
+						the slowest 5% of the requests to complete is responsible for half of the total
+						99%-percentile latency.
+					</q>
+				</section>
+
+				<section>
+					<h2>Techniques that tolerate latency</h2>
+					<ol>
+						<li><b>Hedged requests</b></li>
+						<li>Tied requests</li>
+						<li>Micro partitions</li>
+						<li>Selective replication</li>
+						<li>Latency-induced probation</li>
+						<li>Good enough responses</li>
+						<li>Canary requests</li>
+					</ol>
+				</section>
+			</section>
+
+			<section>
+				<section>
+					<h1>Hedged Requests</h1>
+				</section>
+				<section>
+					<q cite="https://www2.cs.duke.edu/courses/cps296.4/fall13/838-CloudPapers/dean_longtail.pdf">
+						A simple way to
+						curb latency variability is to issue the
+						same request to multiple replicas and
+						use the results from whichever replica
+						responds first.
+					</q>
+				</section>
+				<section>
+					<q cite="https://www2.cs.duke.edu/courses/cps296.4/fall13/838-CloudPapers/dean_longtail.pdf">
+						One such approach is to defer sending a secondary request until the first
+						request has been outstanding for more
+						than the 95th-percentile expected latency for this class of requests. This
+						approach limits the additional load to
+						approximately 5% while substantially
+						shortening the latency tail.
+					</q>
+				</section>
+				<section>
+					<q cite="https://www2.cs.duke.edu/courses/cps296.4/fall13/838-CloudPapers/dean_longtail.pdf">
+						For example, in
+						a Google benchmark that reads the values for 1,000 keys stored in a BigTable
+						table distributed across 100 different
+						servers, sending a hedging request after
+						a 10ms delay reduces the 99.9th-percentile latency for retrieving all 1,000 values
+						from 1,800ms to 74ms...
+					</q>
+				</section>
+				<section>
+					<q cite="https://www2.cs.duke.edu/courses/cps296.4/fall13/838-CloudPapers/dean_longtail.pdf">
+						... while sending just 2% more requests.
+					</q>
+				</section>
+			</section>
+
+			<section>
+				<section>
+					<h2>How hard is to implement this?</h2>
+					<h3 class="fragment">Demo time!</h3>
+				</section>
+
+				<section>
+					<h1>go</h1>
+					<h3 class="fragment">The following demo is written in go for the following reasons</h3>
+				</section>
+				<section>
+					<h2>Concurrency model based on <a
+							href="https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf">Communicating Sequential
+							Processes</a></h2>
+					<p class="fragment">Independent processes that communicate through channels</p>
+				</section>
+				<section>
+					<h2>Channels</h2>
+					<p>First class types that can be initialized, stored as variables, passed as parameters...</p>
+				</section>
+				<section>
+					<h2>Goroutines (processes in CSP)</h2>
+					<p>As simple and lightweight as puting a go instruction before calling the function</p>
+					<pre>
+						<code data-trim data-noescape class="hljs go" data-line-numbers="3">
+							func main() {
+							  myFunc()
+							  go myFunc()
+							}
+						</code>
+					</pre>
+				</section>
+				<section>
+					<h2>But the truth is...</h2>
+					<h3 class="fragment">This implementation is super easy</h3>
+					<h3 class="fragment">Go is a concurrent language by desing</h3>
+					<h3 class="fragment">The tail at scale paper acknowlodges Rob Pike</h3>
+					<h4 class="fragment">and I'm not very smart... So I'll stand on the shoulders of giants.</h4>
+				</section>
+			</section>
+		</div>
+	</div>
+
+	<script src="js/reveal.js"></script>
+
+	<script>
+
+		// More info https://github.com/hakimel/reveal.js#configuration
+		Reveal.initialize({
+			controls: true,
+			progress: true,
+			center: true,
+			hash: true,
+
+			transition: 'slide', // none/fade/slide/convex/concave/zoom
+
+			// More info https://github.com/hakimel/reveal.js#dependencies
+			dependencies: [
+				{ src: 'plugin/markdown/marked.js', condition: function () { return !!document.querySelector('[data-markdown]'); } },
+				{ src: 'plugin/markdown/markdown.js', condition: function () { return !!document.querySelector('[data-markdown]'); } },
+				{ src: 'plugin/highlight/highlight.js', async: true },
+				{ src: 'plugin/search/search.js', async: true },
+				{ src: 'plugin/zoom-js/zoom.js', async: true },
+				{ src: 'plugin/notes/notes.js', async: true }
+			]
+		});
+
+	</script>
+
+</body>
+
+</html>

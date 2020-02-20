@@ -1,0 +1,3 @@
+*.log
+client/client
+external-service/external-service
